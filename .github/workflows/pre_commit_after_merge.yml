@@ -1,0 +1,88 @@
+name: Run Precommit After Merge
+
+on:
+  workflow_run:
+    workflows: [pre-commit preparation]
+    types:
+      - completed
+
+permissions:
+  pull-requests: write
+  contents: write
+
+jobs:
+  # comment with a message on how to do pre-commit
+  # if the pre-commit check was not passed
+  run-precommit-after-pr:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true && github.base_ref == 'main'
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: 'Download artifact'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            let allArtifacts = await github.rest.actions.listWorkflowRunArtifacts({
+               owner: context.repo.owner,
+               repo: context.repo.repo,
+               run_id: context.payload.workflow_run.id,
+            });
+            let matchArtifact = allArtifacts.data.artifacts.filter((artifact) => {
+              return artifact.name == "pre_commit"
+            })[0];
+            let download = await github.rest.actions.downloadArtifact({
+               owner: context.repo.owner,
+               repo: context.repo.repo,
+               artifact_id: matchArtifact.id,
+               archive_format: 'zip',
+            });
+            let fs = require('fs');
+            fs.writeFileSync(`${process.env.GITHUB_WORKSPACE}/pr_number.zip`, Buffer.from(download.data));
+
+      - name: 'Unzip artifact'
+        run: unzip pre_commit.zip
+      
+      - uses: actions/setup-python@v3
+
+      - name: Cache pre-commit hooks
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pre-commit
+          key: ${{ runner.os }}-pre-commit-hooks
+      
+      - name: Set up pre-commit
+        run: |
+          pip install pre-commit
+          pre-commit install
+
+      - name: Run Pre-commit
+        run: |
+          while IFS="" read -r p || [ -n "$p" ]
+          do
+            echo "======= running pre-commit on ${p} ======="
+            pre-commit run --files $p
+          done < ./changed-files.txt
+
+      - name: Create commits
+        run: |
+          pr_number=$(cat ./pr_number)
+          git config --global user.name 'github-actions'
+          git config --global user.email 'github-actions@github.com'
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
+          git add -A
+          git commit -am "[format] applied code formatting on changed files in pull request ${pr_number}"
+          
+      - name: Create Pull Request
+        id: cpr
+        uses: peter-evans/create-pull-request@v4
+
+      - name: Enable Auto-merge for the New PR
+        uses: peter-evans/enable-pull-request-automerge@v2
+        with:
+          pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
+          merge-method: squash
+      
+      
+
+      
