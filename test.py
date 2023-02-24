@@ -1,3 +1,3 @@
-print("hey") 
-print("hey") 
-print("yo") 
+print("hey")
+print("hey")
+print("yo")
