@@ -1,72 +1,76 @@
-name: Run Precommit After Merge
+name: pre-commit preparation
 
 on:
-  workflow_run:
-    workflows: [pre-commit preparation]
+  pull_request:
     types:
-      - completed
-
-permissions:
-  pull-requests: write
-  contents: write
+        - closed
 
 jobs:
-  # comment with a message on how to do pre-commit
-  # if the pre-commit check was not passed
-  run-precommit-after-pr:
+  # this job only detects which files are changed by this PR
+  # the actual code formatting will be conducted in the pre_commit_after_merge.yml
+  # after the PR is merged
+  # the reason why we do this is that many community contributors 
+  # do not know how to use pre-commit
+  pre-commit:
     runs-on: ubuntu-latest
     if: github.event.pull_request.merged == true
     steps:
-      - uses: actions/checkout@v3
+    - uses: actions/checkout@v2
+      with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: 'Download artifact'
-        uses: actions/github-script@v6
-        with:
-          script: |
-            let allArtifacts = await github.rest.actions.listWorkflowRunArtifacts({
-               owner: context.repo.owner,
-               repo: context.repo.repo,
-               run_id: context.payload.workflow_run.id,
-            });
-            let matchArtifact = allArtifacts.data.artifacts.filter((artifact) => {
-              return artifact.name == "pre_commit"
-            })[0];
-            let download = await github.rest.actions.downloadArtifact({
-               owner: context.repo.owner,
-               repo: context.repo.repo,
-               artifact_id: matchArtifact.id,
-               archive_format: 'zip',
-            });
-            let fs = require('fs');
-            fs.writeFileSync(`${process.env.GITHUB_WORKSPACE}/pre_commit.zip`, Buffer.from(download.data));
+    # the PR branch and the hpcaitech/colossal-ai main branch
+    # must share a common commit, we need to locate that commit,
+    # which is the commit checked-out or forked when the PR branch is created
+    # such that we can look for files changed since that commit
+    - name: Locate base commit
+      id: locate-base-sha
+      run: |
+          curBranch=$(git rev-parse --abbrev-ref HEAD)
+          commonCommit=$(git merge-base origin/main $curBranch)
+          echo $commonCommit
+          echo "baseSHA=$commonCommit" >> $GITHUB_OUTPUT
 
-      - name: 'Unzip artifact'
-        run: unzip pre_commit.zip
-      
-      - uses: actions/setup-python@v3
+    - name: Find the changed files
+      id: find-changed-files
+      uses: tj-actions/changed-files@v35
+      with:
+        base_sha: ${{ steps.locate-base-sha.outputs.baseSHA }}
 
-      - name: Cache pre-commit hooks
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/pre-commit
-          key: ${{ runner.os }}-pre-commit-hooks
+    - name: List all changed files
+      run: |
+        for file in ${{ steps.find-changed-files.outputs.all_changed_files }}; do
+          echo "$file was changed"
+        done
+    
+    - uses: actions/checkout@v2
+      with:
+          ref: 'main'
+
+    - uses: actions/setup-python@v3
+
+    - name: Cache pre-commit hooks
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pre-commit
+        key: ${{ runner.os }}-pre-commit-hooks
       
       - name: Set up pre-commit
         run: |
           pip install pre-commit
           pre-commit install
 
+      - name: 
+
       - name: Run Pre-commit
         run: |
-          while IFS="" read -r p || [ -n "$p" ]
-          do
-            echo "======= running pre-commit on ${p} ======="
-            pre-commit run --files $p
-          done < ./changed-files.txt
+          for file in ${{ steps.find-changed-files.outputs.all_changed_files }}; do
+            pre-commit run --files $file
+          done
 
       - name: Create commits
         run: |
-          pr_number=$(cat ./pr_number)
           git config --global user.name 'github-actions'
           git config --global user.email 'github-actions@github.com'
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
@@ -76,6 +80,8 @@ jobs:
       - name: Create Pull Request
         id: cpr
         uses: peter-evans/create-pull-request@v4
+        with:
+          branch: pre-commit-${{ github.event.pull_request.number }}
 
       - name: Enable Auto-merge for the New PR
         uses: peter-evans/enable-pull-request-automerge@v2
@@ -83,6 +89,4 @@ jobs:
           pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
           merge-method: squash
       
-      
 
-      
