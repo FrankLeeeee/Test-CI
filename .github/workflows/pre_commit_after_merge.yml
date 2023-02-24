@@ -77,13 +77,14 @@ jobs:
         git config --global user.email 'github-actions@github.com'
         git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
         git add -A
-        git commit -am "[format] applied code formatting on changed files in pull request ${pr_number}"
+        git commit -am "[format] applied code formatting on changed files in pull request ${{ github.event.pull_request.number }}"
         
     - name: Create Pull Request
       id: cpr
       uses: peter-evans/create-pull-request@v4
       with:
         branch: pre-commit-${{ github.event.pull_request.number }}
+        title: "[format] applied code formatting on changed files in PR ${{ github.event.pull_request.number }}" 
 
     - name: Enable Auto-merge for the New PR
       uses: peter-evans/enable-pull-request-automerge@v2
