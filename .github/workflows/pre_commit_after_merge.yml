@@ -60,37 +60,37 @@ jobs:
         path: ~/.cache/pre-commit
         key: ${{ runner.os }}-pre-commit-hooks
       
-      - name: Set up pre-commit
-        run: |
-          pip install pre-commit
-          pre-commit install
+    - name: Set up pre-commit
+      run: |
+        pip install pre-commit
+        pre-commit install
 
-      - name: 
+    - name: 
 
-      - name: Run Pre-commit
-        run: |
-          for file in ${{ steps.find-changed-files.outputs.all_changed_files }}; do
-            pre-commit run --files $file
-          done
+    - name: Run Pre-commit
+      run: |
+        for file in ${{ steps.find-changed-files.outputs.all_changed_files }}; do
+          pre-commit run --files $file
+        done
 
-      - name: Create commits
-        run: |
-          git config --global user.name 'github-actions'
-          git config --global user.email 'github-actions@github.com'
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
-          git add -A
-          git commit -am "[format] applied code formatting on changed files in pull request ${pr_number}"
-          
-      - name: Create Pull Request
-        id: cpr
-        uses: peter-evans/create-pull-request@v4
-        with:
-          branch: pre-commit-${{ github.event.pull_request.number }}
+    - name: Create commits
+      run: |
+        git config --global user.name 'github-actions'
+        git config --global user.email 'github-actions@github.com'
+        git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
+        git add -A
+        git commit -am "[format] applied code formatting on changed files in pull request ${pr_number}"
+        
+    - name: Create Pull Request
+      id: cpr
+      uses: peter-evans/create-pull-request@v4
+      with:
+        branch: pre-commit-${{ github.event.pull_request.number }}
 
-      - name: Enable Auto-merge for the New PR
-        uses: peter-evans/enable-pull-request-automerge@v2
-        with:
-          pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
-          merge-method: squash
+    - name: Enable Auto-merge for the New PR
+      uses: peter-evans/enable-pull-request-automerge@v2
+      with:
+        pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
+        merge-method: squash
       
 
